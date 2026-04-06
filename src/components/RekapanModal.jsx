@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Loader2, Calendar, LayoutGrid, ChevronLeft, Trash2, Download, Edit2 } from 'lucide-react';
+import { X, Loader2, Calendar, LayoutGrid, ChevronLeft, Trash2, Download, Edit2, Camera } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
+import { toPng } from 'html-to-image';
 
 const JABATAN_ORDER = [
   'ketua_kelas', 'wakil_ketua', 'rois_am', 'wakil_am', 'sekretaris', 'pengabsen',
@@ -9,6 +10,27 @@ const JABATAN_ORDER = [
   'kebersihan_1', 'kebersihan_2', 'perlengkapan_1', 'perlengkapan_2', 
   'katib_1', 'katib_2'
 ];
+
+const MUSTAHIQ_MAPPING = {
+  "A1": "Bpk. Abdillah Khoironi",
+  "A2": "Bpk. Aunurrofiq",
+  "A3": "Bpk. Abdul Wakhid",
+  "B1": "Bpk. Adin Muhamad Mufid",
+  "B2": "Bpk. Muhammad Hibbatullah Dzul Izzi",
+  "B3": "Bpk. Muhammad Burhanuddin Ramadhan",
+  "C1": "Bpk. Mohamad Khasan Bisri",
+  "C2": "Bpk. Muhammad Hadi Mafatih",
+  "C3": "Bpk. Choerul Anam",
+  "D1": "Bpk. Muhammad Ricky Gunawan Pratama",
+  "D2": "Bpk. Muchammad Haqqinnazili",
+  "D3": "Bpk. Ahmad Syarief Qornel"
+};
+
+const getMustahiq = (bagian) => {
+  if (!bagian) return "";
+  const key = Object.keys(MUSTAHIQ_MAPPING).find(k => bagian.includes(k));
+  return key ? MUSTAHIQ_MAPPING[key] : "";
+};
 
 export default function RekapanModal({ isOpen, onClose, onEdit }) {
   const [data, setData] = useState([]);
@@ -18,6 +40,7 @@ export default function RekapanModal({ isOpen, onClose, onEdit }) {
   const [viewMode, setViewMode] = useState('list');
   const [selectedItem, setSelectedItem] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -58,16 +81,15 @@ export default function RekapanModal({ isOpen, onClose, onEdit }) {
       return;
     }
 
-    // Ekspor format menurun (vertikal)
     const exportData = [];
 
     data.forEach(item => {
       const tanggal = item.created_at ? new Date(item.created_at).toLocaleDateString('id-ID') : '-';
 
       JABATAN_ORDER.forEach(key => {
-        // Selalu render baris excel, jika nama kosong biarkan blank
         exportData.push({
           'Bagian / Ruang': item.bagian,
+          'Mustahiq': getMustahiq(item.bagian),
           'Jabatan': key.replace(/_/g, ' ').toUpperCase(),
           'Nama Siswi': item[key] ? item[key] : '', 
           'Tanggal Input': tanggal
@@ -84,9 +106,9 @@ export default function RekapanModal({ isOpen, onClose, onEdit }) {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Rekapan Penugasan");
 
-    // Pelebaran Manual agar rapi
     worksheet['!cols'] = [
       { wch: 18 }, // Bagian
+      { wch: 30 }, // Mustahiq
       { wch: 20 }, // Jabatan
       { wch: 35 }, // Nama Siswi
       { wch: 15 }  // Tanggal
@@ -109,7 +131,6 @@ export default function RekapanModal({ isOpen, onClose, onEdit }) {
 
       if (error) throw error;
       
-      // Update UI balik ke menu utama
       setData(prev => prev.filter(item => item.id !== id));
       setViewMode('list');
       setSelectedItem(null);
@@ -118,6 +139,35 @@ export default function RekapanModal({ isOpen, onClose, onEdit }) {
       alert('Gagal menghapus data dari database. Pastikan RLS Policy Supabase mengizinkan Delete operation.');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleScreenshot = async () => {
+    const captureElement = document.getElementById('capture-area');
+    if (!captureElement) return;
+
+    try {
+      setIsCapturing(true);
+      
+      // Delay sedikit agar UI render sempurna
+      await new Promise(r => setTimeout(r, 100));
+
+      const image = await toPng(captureElement, {
+        quality: 1.0,
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+      });
+      
+      // Membuat link download automatis
+      const link = document.createElement('a');
+      link.download = `Rekapan_${selectedItem.bagian || 'Tugas'}.png`;
+      link.href = image;
+      link.click();
+    } catch (err) {
+      console.error('Error generating screenshot:', err);
+      alert('Terjadi kesalahan saat mengambil screenshot.');
+    } finally {
+      setIsCapturing(false);
     }
   };
 
@@ -221,58 +271,83 @@ export default function RekapanModal({ isOpen, onClose, onEdit }) {
             {/* TAMPILAN TABEL MENURUN (DETAIL VIEW) */}
             {viewMode === 'detail' && selectedItem && (
                <div className="max-w-4xl mx-auto pb-12 pt-2 animate-in slide-in-from-bottom-8 fade-in duration-300">
+                 
+                 {/* Tombol Screenshot */}
+                 <div className="flex justify-end mb-4">
+                   <button
+                     onClick={handleScreenshot}
+                     disabled={isCapturing}
+                     className="flex items-center px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md transition-all font-bold text-sm active:scale-95 disabled:opacity-50"
+                   >
+                     {isCapturing ? (
+                       <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                     ) : (
+                       <Camera className="w-5 h-5 mr-2" />
+                     )}
+                     {isCapturing ? 'Memproses...' : 'Screenshot Data'}
+                   </button>
+                 </div>
+
                  <div className="bg-white rounded-[2rem] shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden relative">
                    
-                   {/* Header Spesifik Detail */}
-                   <div className="px-6 py-8 sm:px-10 bg-gradient-to-br from-blue-600 via-blue-500 to-blue-500 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
-                     <div className="absolute -right-4 -bottom-10 opacity-10 blur-[2px]">
-                       <LayoutGrid className="w-48 h-48" />
+                   {/* Area yang akan di-capture (Hanya Header dan Tabel) */}
+                   <div id="capture-area" className="bg-white">
+                     {/* Header Spesifik Detail */}
+                     <div className="px-6 py-8 sm:px-10 bg-gradient-to-br from-blue-600 via-blue-500 to-blue-500 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
+                       <div className="absolute -right-4 -bottom-10 opacity-10 blur-[2px]">
+                         <LayoutGrid className="w-48 h-48" />
+                       </div>
+                       <div className="relative z-10">
+                         <span className="text-blue-100 text-xs font-bold uppercase tracking-[0.2em] block mb-2">
+                           Data Jabatan Terekam
+                         </span>
+                         <span className="text-4xl font-black block mb-1">{selectedItem.bagian}</span>
+                         {getMustahiq(selectedItem.bagian) && (
+                           <span className="text-lg font-bold opacity-90 block mt-2 bg-blue-800/40 w-fit px-3 py-1 rounded-lg backdrop-blur-sm shadow-sm border border-blue-400/30">
+                             {getMustahiq(selectedItem.bagian)}
+                           </span>
+                         )}
+                       </div>
+                       <div className="flex items-center space-x-3 relative z-10">
+                          <span className="flex items-center text-blue-50 font-medium text-sm bg-black/20 px-4 py-2 rounded-xl backdrop-blur-sm shadow-inner border border-white/10">
+                            <Calendar className="w-4 h-4 mr-2" />
+                            {new Date(selectedItem.created_at).toLocaleDateString('id-ID', {
+                              weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+                            })}
+                          </span>
+                       </div>
                      </div>
-                     <div className="relative z-10">
-                       <span className="text-blue-100 text-xs font-bold uppercase tracking-[0.2em] block mb-2">
-                         Data Jabatan Terekam
-                       </span>
-                       <span className="text-4xl font-black">{selectedItem.bagian}</span>
-                     </div>
-                     <div className="flex items-center space-x-3 relative z-10">
-                        <span className="flex items-center text-blue-50 font-medium text-sm bg-black/20 px-4 py-2 rounded-xl backdrop-blur-sm shadow-inner border border-white/10">
-                          <Calendar className="w-4 h-4 mr-2" />
-                          {new Date(selectedItem.created_at).toLocaleDateString('id-ID', {
-                            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-                          })}
-                        </span>
+
+                     {/* Badan Tabel Detail Lengkap */}
+                     <div className="p-0 sm:p-2 bg-gray-50/50">
+                       <table className="w-full text-left bg-transparent">
+                         <tbody className="divide-y divide-gray-200/60">
+                           {JABATAN_ORDER.map((jabatan) => {
+                             const nama = selectedItem[jabatan];
+                             return (
+                               <tr key={jabatan} className="bg-white">
+                                 <td className="px-6 sm:px-10 py-5 font-bold text-gray-500 text-xs tracking-widest uppercase w-2/5 sm:w-1/3 border-r border-gray-100">
+                                   {jabatan.replace(/_/g, ' ')}
+                                 </td>
+                                 <td className="px-6 sm:px-10 py-5 text-gray-900 font-bold text-base sm:text-xl">
+                                   {nama ? nama : <span className="text-gray-300">-</span>}
+                                 </td>
+                               </tr>
+                             );
+                           })}
+                         </tbody>
+                       </table>
                      </div>
                    </div>
 
-                   {/* Badan Tabel Detail Lengkap */}
-                   <div className="p-0 sm:p-2 bg-gray-50/50">
-                     <table className="w-full text-left bg-transparent">
-                       <tbody className="divide-y divide-gray-100/50">
-                         {JABATAN_ORDER.map((jabatan) => {
-                           const nama = selectedItem[jabatan];
-                           return (
-                             <tr key={jabatan} className="hover:bg-white transition-colors group">
-                               <td className="px-6 sm:px-10 py-5 font-bold text-gray-500 text-xs tracking-widest uppercase w-2/5 sm:w-1/3 border-r border-gray-100 group-hover:text-blue-600 transition-colors">
-                                 {jabatan.replace(/_/g, ' ')}
-                               </td>
-                               <td className="px-6 sm:px-10 py-5 text-gray-900 font-bold text-base sm:text-xl">
-                                 {nama ? nama : <span className="text-gray-300">-</span>}
-                               </td>
-                             </tr>
-                           );
-                         })}
-                       </tbody>
-                     </table>
-                   </div>
-
-                    {/* Footer Detail Area Hapus */}
+                    {/* Footer Detail Area Hapus (Tidak ikut ter-capture) */}
                     <div className="p-6 sm:p-8 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
                       <p className="text-sm font-medium text-gray-400 flex-1">
-                        Gunakan tombol edit untuk melanjutkan data atau tombol hapus jika ingin menghaous data.
+                        Gunakan tombol edit untuk menyesuaikan data atau tombol hapus jika ingin menghapus data keseluruhan.
                       </p>
                       <div className="flex w-full sm:w-auto gap-3 flex-col sm:flex-row">
                         <button
-                          onClick={() => onEdit(selectedItem)}
+                          onClick={() => onEdit && onEdit(selectedItem)}
                           disabled={isDeleting}
                           className="w-full sm:w-auto flex justify-center items-center px-6 py-3.5 bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-600 hover:text-white hover:border-blue-600 font-bold rounded-xl transition-colors shadow-sm active:scale-95 disabled:opacity-50"
                         >
@@ -293,6 +368,7 @@ export default function RekapanModal({ isOpen, onClose, onEdit }) {
                         </button>
                       </div>
                     </div>
+
                  </div>
                </div>
             )}

@@ -91,7 +91,7 @@ export default function RekapanModal({ isOpen, onClose, onEdit }) {
           'Bagian / Ruang': item.bagian,
           'Mustahiq': getMustahiq(item.bagian),
           'Jabatan': key.replace(/_/g, ' ').toUpperCase(),
-          'Nama Siswi': item[key] ? item[key] : '', 
+          'Nama Siswi': item[key] ? item[key] : '-', 
           'Tanggal Input': tanggal
         });
       });
